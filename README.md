@@ -1,15 +1,17 @@
-# Bidmart Listing Query Service
+# BidMart Listing Query Service
 
-Read-only service untuk listing query di Bidmart.
+Service read-only untuk query listing di BidMart. Service ini diekstrak dari gateway/monolith lama sebagai read-side public catalog.
 
-## Responsibilities
+## Tanggung Jawab
 
-- Read listing catalog
-- Read listing detail
-- Read listing categories
-- Expose health check
+- Membaca listing catalog.
+- Membaca listing detail.
+- Membaca listing categories.
+- Mengekspos health check.
 
-## Endpoints
+Service ini bersifat read-only. Listing write command dan validasi transactional untuk bidding tidak menjadi tanggung jawab service ini.
+
+## Endpoint
 
 ```txt
 GET /api/listings
@@ -19,9 +21,9 @@ GET /api/listings/categories/tree
 GET /actuator/health
 ```
 
-## Local development
+## Run Lokal
 
-Run test:
+Jalankan test:
 
 ```bash
 ./gradlew test
@@ -39,13 +41,13 @@ Build Docker image:
 docker build -t bidmart-listing-query-service .
 ```
 
-Run Docker container:
+Run container:
 
 ```bash
 docker run --env-file .env -p 8082:8082 bidmart-listing-query-service
 ```
 
-## Environment variables
+## Environment Variable
 
 ```txt
 PORT
@@ -55,23 +57,24 @@ SPRING_DATASOURCE_USERNAME
 SPRING_DATASOURCE_PASSWORD
 ```
 
-## Migration status
+## Service Boundary
 
-This service is extracted from the legacy Bidmart gateway/monolith as the second read-side microservice candidate.
+Dokumentasi boundary ada di `docs/service-boundary.md`.
 
-Current phase:
+## Status Migrasi
+
+Fase saat ini:
 
 ```txt
 gateway + auction-query-service + listing-query-service
 ```
 
-Not included yet:
+Belum termasuk:
 
 ```txt
 listing-command-service
-auction-command-service
+bidding-command-service
 wallet-service
 auth-service
-bid-service
 notification-service
 ```
