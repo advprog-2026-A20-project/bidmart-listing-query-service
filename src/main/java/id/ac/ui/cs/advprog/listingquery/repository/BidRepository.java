@@ -14,4 +14,11 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
         where b.auction.id = :auctionId
         """)
     long countByAuctionId(@Param("auctionId") UUID auctionId);
+
+    @Query("""
+        select count(b) > 0
+        from Bid b
+        where b.auction.listing.id = :listingId
+        """)
+    boolean existsByListingId(@Param("listingId") UUID listingId);
 }

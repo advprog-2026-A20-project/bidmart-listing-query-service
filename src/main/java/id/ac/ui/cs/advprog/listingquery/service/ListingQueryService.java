@@ -1,16 +1,23 @@
 package id.ac.ui.cs.advprog.listingquery.service;
 
+import id.ac.ui.cs.advprog.listingquery.dto.ListingBidValidationResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingCategoryNodeResponse;
+import id.ac.ui.cs.advprog.listingquery.dto.ListingCreateRequest;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingDetailResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingResponse;
+import id.ac.ui.cs.advprog.listingquery.dto.ListingUpdateRequest;
+import id.ac.ui.cs.advprog.listingquery.dto.PublicSellerProfileResponse;
 import id.ac.ui.cs.advprog.listingquery.model.Auction;
 import id.ac.ui.cs.advprog.listingquery.model.AuctionStatus;
 import id.ac.ui.cs.advprog.listingquery.model.Listing;
 import id.ac.ui.cs.advprog.listingquery.model.ListingCategory;
 import id.ac.ui.cs.advprog.listingquery.model.ListingStatus;
+import id.ac.ui.cs.advprog.listingquery.model.Role;
+import id.ac.ui.cs.advprog.listingquery.model.User;
 import id.ac.ui.cs.advprog.listingquery.repository.AuctionRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.BidRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.ListingRepository;
+import id.ac.ui.cs.advprog.listingquery.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Arrays;
@@ -35,19 +42,50 @@ public class ListingQueryService {
         ListingStatus.ACTIVE,
         ListingStatus.EXTENDED
     );
+    private static final List<AuctionStatus> LIVE_AUCTION_STATUSES = List.of(
+        AuctionStatus.DRAFT,
+        AuctionStatus.ACTIVE,
+        AuctionStatus.EXTENDED
+    );
+    private static final List<AuctionStatus> COMPLETED_AUCTION_STATUSES = List.of(
+        AuctionStatus.CLOSED,
+        AuctionStatus.WON,
+        AuctionStatus.UNSOLD,
+        AuctionStatus.CANCELLED
+    );
 
     private final ListingRepository listingRepository;
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
+    private final UserRepository userRepository;
 
     public ListingQueryService(
         ListingRepository listingRepository,
         AuctionRepository auctionRepository,
-        BidRepository bidRepository
+        BidRepository bidRepository,
+        UserRepository userRepository
     ) {
         this.listingRepository = listingRepository;
         this.auctionRepository = auctionRepository;
         this.bidRepository = bidRepository;
+        this.userRepository = userRepository;
+    }
+
+    @Transactional
+    public ListingResponse createListing(ListingCreateRequest request, UUID sellerId) {
+        validateCreateRequest(request);
+        User seller = loadAuthorizedSeller(sellerId);
+        Listing listing = Listing.builder()
+            .title(request.title().trim())
+            .description(request.description().trim())
+            .imageUrl(normalizeImageUrl(request.imageUrl()))
+            .price(request.price())
+            .category(resolveCategory(request.category()))
+            .seller(seller)
+            .status(ListingStatus.ACTIVE)
+            .createdAt(Instant.now())
+            .build();
+        return toSummaryResponse(listingRepository.save(listing));
     }
 
     @Transactional(readOnly = true)
@@ -114,6 +152,103 @@ public class ListingQueryService {
             .filter(ListingCategory::isRoot)
             .map(this::toCategoryNode)
             .toList();
+    }
+
+    @Transactional
+    public ListingDetailResponse updateListing(UUID listingId, ListingUpdateRequest request, UUID sellerId) {
+        validateUpdateRequest(request);
+        Listing listing = getOwnedEditableListing(listingId, sellerId);
+        listing.setDescription(request.description().trim());
+        listing.setImageUrl(normalizeImageUrl(request.imageUrl()));
+        listing.setCategory(resolveCategory(request.category()));
+        listing.setUpdatedAt(Instant.now());
+        return toDetailResponse(listingRepository.save(listing));
+    }
+
+    @Transactional
+    public ListingDetailResponse cancelListing(UUID listingId, UUID sellerId) {
+        Listing listing = getOwnedEditableListing(listingId, sellerId);
+        findAuctionByListingId(listingId).ifPresent(auction -> {
+            if (auction.getStatus() != AuctionStatus.DRAFT && auction.getStatus() != AuctionStatus.ACTIVE) {
+                throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Auction cannot be cancelled in status " + auction.getStatus()
+                );
+            }
+        });
+        listing.setStatus(ListingStatus.CANCELLED);
+        listing.setCancelledAt(Instant.now());
+        listing.setUpdatedAt(Instant.now());
+        return toDetailResponse(listingRepository.save(listing));
+    }
+
+    @Transactional(readOnly = true)
+    public ListingBidValidationResponse validateListingForBid(UUID listingId) {
+        Listing listing = listingRepository.findById(listingId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
+        Auction auction = findAuctionByListingId(listingId).orElse(null);
+
+        ListingStatus listingStatus = effectiveListingStatus(listing, auction);
+        boolean active = isListingOpenForBid(listingStatus);
+        if (!active) {
+            return new ListingBidValidationResponse(
+                listing.getId(),
+                false,
+                false,
+                "Listing is no longer active",
+                listingStatus,
+                auction == null ? null : auction.getStatus(),
+                auction == null ? null : auction.getEndsAt()
+            );
+        }
+        if (auction == null) {
+            return new ListingBidValidationResponse(
+                listing.getId(),
+                true,
+                false,
+                "Listing is not attached to an auction",
+                listingStatus,
+                null,
+                null
+            );
+        }
+
+        boolean biddable = auction.getStatus() == AuctionStatus.ACTIVE || auction.getStatus() == AuctionStatus.EXTENDED;
+        return new ListingBidValidationResponse(
+            listing.getId(),
+            true,
+            biddable,
+            biddable ? "Listing is valid for bidding" : "Auction is not accepting bids",
+            listingStatus,
+            auction.getStatus(),
+            auction.getEndsAt()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PublicSellerProfileResponse getPublicSellerProfile(UUID userId) {
+        User seller = userRepository.findById(userId)
+            .filter(user -> user.getRole() == Role.SELLER)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seller not found"));
+
+        long activeListingCount = listingRepository.countBySellerIdAndStatus(seller.getId(), ListingStatus.ACTIVE);
+        long liveAuctionCount = auctionRepository.countByListingSellerIdAndStatusIn(
+            seller.getId(),
+            LIVE_AUCTION_STATUSES
+        );
+        long completedAuctionCount = auctionRepository.countByListingSellerIdAndStatusIn(
+            seller.getId(),
+            COMPLETED_AUCTION_STATUSES
+        );
+
+        return new PublicSellerProfileResponse(
+            seller.getId(),
+            seller.getEmail(),
+            seller.getRole(),
+            activeListingCount,
+            liveAuctionCount,
+            completedAuctionCount
+        );
     }
 
     private ListingResponse toSummaryResponse(Listing listing) {
@@ -254,9 +389,44 @@ public class ListingQueryService {
         return auctionRepository.findByListingId(listingId);
     }
 
+    private Listing getOwnedEditableListing(UUID listingId, UUID sellerId) {
+        Listing listing = listingRepository.findById(listingId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
+        Auction auction = findAuctionByListingId(listingId).orElse(null);
+
+        if (!listing.getSeller().getId().equals(sellerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not own this listing");
+        }
+        if (auction != null && auction.getStatus() != AuctionStatus.DRAFT && auction.getStatus() != AuctionStatus.ACTIVE) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Listing cannot be modified in auction status " + auction.getStatus()
+            );
+        }
+        if (!isListingEditableStatus(effectiveListingStatus(listing, auction))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Listing is not editable");
+        }
+        if (bidRepository.existsByListingId(listingId)) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Listing cannot be modified because it already has bids"
+            );
+        }
+
+        return listing;
+    }
+
     private boolean isPublicListing(Listing listing) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
         return PUBLIC_LISTING_STATUSES.contains(effectiveListingStatus(listing, auction));
+    }
+
+    private boolean isListingOpenForBid(ListingStatus status) {
+        return status == ListingStatus.ACTIVE || status == ListingStatus.EXTENDED;
+    }
+
+    private boolean isListingEditableStatus(ListingStatus status) {
+        return status == ListingStatus.DRAFT || status == ListingStatus.ACTIVE;
     }
 
     private ListingStatus effectiveListingStatus(Listing listing, Auction auction) {
@@ -288,5 +458,53 @@ public class ListingQueryService {
             category.pathLabel(),
             category.children().stream().map(this::toCategoryNode).toList()
         );
+    }
+
+    private User loadAuthorizedSeller(UUID sellerId) {
+        User seller = userRepository.findById(sellerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+        if (seller.getRole() != Role.SELLER) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only SELLER can create listings");
+        }
+        return seller;
+    }
+
+    private ListingCategory resolveCategory(ListingCategory category) {
+        return category != null ? category : ListingCategory.OTHER;
+    }
+
+    private void validateCreateRequest(ListingCreateRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Listing request is required");
+        }
+        requireNonBlank(request.title(), "Title is required");
+        requireNonBlank(request.description(), "Description is required");
+        validatePositivePrice(request.price());
+    }
+
+    private void validateUpdateRequest(ListingUpdateRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Listing update request is required");
+        }
+        requireNonBlank(request.description(), "Description is required");
+    }
+
+    private void requireNonBlank(String value, String errorMessage) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, errorMessage);
+        }
+    }
+
+    private void validatePositivePrice(BigDecimal price) {
+        if (price == null || price.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Price must be positive");
+        }
+    }
+
+    private String normalizeImageUrl(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+        return imageUrl.trim();
     }
 }

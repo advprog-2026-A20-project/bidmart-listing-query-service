@@ -86,11 +86,12 @@ class ListingQueryIntegrationTest {
     private String insertUser(String email) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
-            insert into app_user (id, email)
-            values (?, ?)
+            insert into app_user (id, email, role)
+            values (?, ?, ?)
             """)
             .setParameter(1, id)
             .setParameter(2, email)
+            .setParameter(3, email.startsWith("seller") ? "SELLER" : "BUYER")
             .executeUpdate();
         return id;
     }
