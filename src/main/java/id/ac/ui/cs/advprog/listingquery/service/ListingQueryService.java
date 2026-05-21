@@ -426,7 +426,7 @@ public class ListingQueryService {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
         ListingStatus effectiveStatus = effectiveListingStatus(listing, auction);
         if (requestedStatus == null) {
-            return PUBLIC_LISTING_STATUSES.contains(effectiveStatus);
+            return true;
         }
         return effectiveStatus == requestedStatus;
     }
