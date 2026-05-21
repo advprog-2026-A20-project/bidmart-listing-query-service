@@ -4,6 +4,7 @@ import id.ac.ui.cs.advprog.listingquery.dto.ListingCategoryNodeResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingDetailResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingResponse;
 import id.ac.ui.cs.advprog.listingquery.model.Auction;
+import id.ac.ui.cs.advprog.listingquery.model.AuctionStatus;
 import id.ac.ui.cs.advprog.listingquery.model.Listing;
 import id.ac.ui.cs.advprog.listingquery.model.ListingCategory;
 import id.ac.ui.cs.advprog.listingquery.model.ListingStatus;
@@ -30,6 +31,10 @@ public class ListingQueryService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 50;
+    private static final List<ListingStatus> PUBLIC_LISTING_STATUSES = List.of(
+        ListingStatus.ACTIVE,
+        ListingStatus.EXTENDED
+    );
 
     private final ListingRepository listingRepository;
     private final AuctionRepository auctionRepository;
@@ -69,7 +74,6 @@ public class ListingQueryService {
         );
 
         Specification<Listing> specification = distinctResults()
-            .and(hasStatus(ListingStatus.ACTIVE))
             .and(hasCategoryOrDescendant(category))
             .and(matchesKeyword(keyword))
             .and(hasMinPrice(minPrice))
@@ -77,6 +81,7 @@ public class ListingQueryService {
 
         List<Listing> matchingListings = listingRepository.findAll(specification, safeSort);
         List<Listing> filteredListings = matchingListings.stream()
+            .filter(this::isPublicListing)
             .filter(listing -> matchesAuctionWindow(listing.getId(), endingAfter, endingBefore))
             .toList();
 
@@ -91,10 +96,11 @@ public class ListingQueryService {
     public ListingDetailResponse getListingDetail(UUID listingId) {
         Listing listing = listingRepository.findById(listingId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
-        if (listing.getStatus() != ListingStatus.ACTIVE) {
+        Auction auction = findAuctionByListingId(listingId).orElse(null);
+        if (effectiveListingStatus(listing, auction) == ListingStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found");
         }
-        return toDetailResponse(listing);
+        return toDetailResponse(listing, auction);
     }
 
     @Transactional(readOnly = true)
@@ -113,6 +119,7 @@ public class ListingQueryService {
     private ListingResponse toSummaryResponse(Listing listing) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
         long totalBids = auction == null ? 0 : bidRepository.countByAuctionId(auction.getId());
+        ListingStatus listingStatus = effectiveListingStatus(listing, auction);
 
         return new ListingResponse(
             listing.getId(),
@@ -124,7 +131,7 @@ public class ListingQueryService {
             listing.getCategory().pathLabel(),
             listing.getSeller().getId(),
             listing.getSeller().getEmail(),
-            listing.getStatus(),
+            listingStatus,
             auction == null ? null : auction.getId(),
             auction == null ? null : auction.getStatus(),
             auction == null ? null : auction.getEndsAt(),
@@ -138,7 +145,12 @@ public class ListingQueryService {
 
     private ListingDetailResponse toDetailResponse(Listing listing) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
+        return toDetailResponse(listing, auction);
+    }
+
+    private ListingDetailResponse toDetailResponse(Listing listing, Auction auction) {
         long totalBids = auction == null ? 0 : bidRepository.countByAuctionId(auction.getId());
+        ListingStatus listingStatus = effectiveListingStatus(listing, auction);
 
         return new ListingDetailResponse(
             listing.getId(),
@@ -154,7 +166,7 @@ public class ListingQueryService {
             listing.getCategory().pathLabel(),
             listing.getSeller().getId(),
             listing.getSeller().getEmail(),
-            listing.getStatus(),
+            listingStatus,
             auction == null ? null : auction.getId(),
             auction == null ? null : auction.getStatus(),
             auction == null ? null : auction.getStartsAt(),
@@ -182,10 +194,6 @@ public class ListingQueryService {
             query.distinct(true);
             return criteriaBuilder.conjunction();
         };
-    }
-
-    private Specification<Listing> hasStatus(ListingStatus status) {
-        return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("status"), status);
     }
 
     private Specification<Listing> hasCategoryOrDescendant(ListingCategory category) {
@@ -244,6 +252,33 @@ public class ListingQueryService {
 
     private Optional<Auction> findAuctionByListingId(UUID listingId) {
         return auctionRepository.findByListingId(listingId);
+    }
+
+    private boolean isPublicListing(Listing listing) {
+        Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
+        return PUBLIC_LISTING_STATUSES.contains(effectiveListingStatus(listing, auction));
+    }
+
+    private ListingStatus effectiveListingStatus(Listing listing, Auction auction) {
+        if (listing.getStatus() == ListingStatus.CANCELLED) {
+            return ListingStatus.CANCELLED;
+        }
+        if (auction == null || auction.getStatus() == null) {
+            return listing.getStatus();
+        }
+        return toListingStatus(auction.getStatus());
+    }
+
+    private ListingStatus toListingStatus(AuctionStatus auctionStatus) {
+        return switch (auctionStatus) {
+            case DRAFT -> ListingStatus.DRAFT;
+            case ACTIVE -> ListingStatus.ACTIVE;
+            case EXTENDED -> ListingStatus.EXTENDED;
+            case CLOSED -> ListingStatus.CLOSED;
+            case WON -> ListingStatus.WON;
+            case UNSOLD -> ListingStatus.UNSOLD;
+            case CANCELLED -> ListingStatus.CANCELLED;
+        };
     }
 
     private ListingCategoryNodeResponse toCategoryNode(ListingCategory category) {

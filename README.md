@@ -76,5 +76,4 @@ listing-command-service
 bidding-command-service
 wallet-service
 auth-service
-notification-service
 ```
