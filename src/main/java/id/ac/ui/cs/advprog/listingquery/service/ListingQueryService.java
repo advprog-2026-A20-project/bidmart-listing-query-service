@@ -95,6 +95,7 @@ public class ListingQueryService {
         String keyword,
         BigDecimal minPrice,
         BigDecimal maxPrice,
+        ListingStatus status,
         Instant endingAfter,
         Instant endingBefore
     ) {
@@ -119,7 +120,7 @@ public class ListingQueryService {
 
         List<Listing> matchingListings = listingRepository.findAll(specification, safeSort);
         List<Listing> filteredListings = matchingListings.stream()
-            .filter(this::isPublicListing)
+            .filter(listing -> matchesStatusFilter(listing, status))
             .filter(listing -> matchesAuctionWindow(listing.getId(), endingAfter, endingBefore))
             .toList();
 
@@ -419,6 +420,15 @@ public class ListingQueryService {
     private boolean isPublicListing(Listing listing) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
         return PUBLIC_LISTING_STATUSES.contains(effectiveListingStatus(listing, auction));
+    }
+
+    private boolean matchesStatusFilter(Listing listing, ListingStatus requestedStatus) {
+        Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
+        ListingStatus effectiveStatus = effectiveListingStatus(listing, auction);
+        if (requestedStatus == null) {
+            return PUBLIC_LISTING_STATUSES.contains(effectiveStatus);
+        }
+        return effectiveStatus == requestedStatus;
     }
 
     private boolean isListingOpenForBid(ListingStatus status) {

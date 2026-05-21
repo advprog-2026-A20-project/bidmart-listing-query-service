@@ -7,6 +7,7 @@ import id.ac.ui.cs.advprog.listingquery.dto.ListingDetailResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingUpdateRequest;
 import id.ac.ui.cs.advprog.listingquery.model.ListingCategory;
+import id.ac.ui.cs.advprog.listingquery.model.ListingStatus;
 import id.ac.ui.cs.advprog.listingquery.security.AuthenticatedUser;
 import id.ac.ui.cs.advprog.listingquery.service.ListingQueryService;
 import jakarta.validation.Valid;
@@ -56,6 +57,7 @@ public class ListingQueryController {
         @RequestParam(required = false) String keyword,
         @RequestParam(required = false) BigDecimal minPrice,
         @RequestParam(required = false) BigDecimal maxPrice,
+        @RequestParam(required = false) ListingStatus status,
         @RequestParam(required = false) Instant endingAfter,
         @RequestParam(required = false) Instant endingBefore
     ) {
@@ -65,6 +67,7 @@ public class ListingQueryController {
             keyword,
             minPrice,
             maxPrice,
+            status,
             endingAfter,
             endingBefore
         );
