@@ -176,6 +176,8 @@ public class ListingQueryService {
                     "Auction cannot be cancelled in status " + auction.getStatus()
                 );
             }
+            auction.setStatus(AuctionStatus.CANCELLED);
+            auction.setClosedAt(Instant.now());
         });
         listing.setStatus(ListingStatus.CANCELLED);
         listing.setCancelledAt(Instant.now());

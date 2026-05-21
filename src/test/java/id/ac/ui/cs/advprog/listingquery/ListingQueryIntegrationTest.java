@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import id.ac.ui.cs.advprog.listingquery.service.ListingQueryService;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -34,6 +35,9 @@ class ListingQueryIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private ListingQueryService listingQueryService;
 
     @BeforeEach
     void setUp() {
@@ -83,6 +87,26 @@ class ListingQueryIntegrationTest {
             .andExpect(jsonPath("$[0].children[0].key").value("ELECTRONICS_PHONE"));
     }
 
+    @Test
+    void cancelDraftListingShouldCancelListingAndAuction() {
+        String sellerId = insertUser("seller@example.com");
+        String listingId = insertListing(sellerId);
+        String auctionId = insertAuction(listingId, "DRAFT");
+
+        listingQueryService.cancelListing(UUID.fromString(listingId), UUID.fromString(sellerId));
+        entityManager.flush();
+
+        Object listingStatus = entityManager.createNativeQuery("select status from listing where id = ?")
+            .setParameter(1, listingId)
+            .getSingleResult();
+        Object auctionStatus = entityManager.createNativeQuery("select status from auction where id = ?")
+            .setParameter(1, auctionId)
+            .getSingleResult();
+
+        org.assertj.core.api.Assertions.assertThat(listingStatus).isEqualTo("CANCELLED");
+        org.assertj.core.api.Assertions.assertThat(auctionStatus).isEqualTo("CANCELLED");
+    }
+
     private String insertUser(String email) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
@@ -110,19 +134,24 @@ class ListingQueryIntegrationTest {
     }
 
     private String insertAuction(String listingId) {
+        return insertAuction(listingId, "ACTIVE");
+    }
+
+    private String insertAuction(String listingId, String status) {
         String id = UUID.randomUUID().toString();
         Instant createdAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         entityManager.createNativeQuery("""
             insert into auction (
                 id, listing_id, status, starting_price, reserve_price, minimum_bid_increment,
                 duration_minutes, created_at, starts_at, ends_at, closed_at
-            ) values (?, ?, 'ACTIVE', 1200.00, 1200.00, 10.00, 60, ?, ?, ?, null)
+            ) values (?, ?, ?, 1200.00, 1200.00, 10.00, 60, ?, ?, ?, null)
             """)
             .setParameter(1, id)
             .setParameter(2, listingId)
-            .setParameter(3, createdAt)
+            .setParameter(3, status)
             .setParameter(4, createdAt)
-            .setParameter(5, createdAt.plus(2, ChronoUnit.HOURS))
+            .setParameter(5, "DRAFT".equals(status) ? null : createdAt)
+            .setParameter(6, "DRAFT".equals(status) ? null : createdAt.plus(2, ChronoUnit.HOURS))
             .executeUpdate();
         return id;
     }
