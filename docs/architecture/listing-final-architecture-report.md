@@ -147,17 +147,17 @@ Hasil simulasi architecture profiling:
 
 | Function | Average ms | P95 ms | P99 ms | Throughput ops/sec | Error rate |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| get-all-active-listings | 21.907 | 28.088 | 28.088 | 45.647 | 0.000 |
-| search-filter-listings | 12.713 | 15.674 | 15.674 | 78.661 | 0.000 |
-| get-listing-detail-by-id | 4.351 | 4.836 | 4.836 | 229.847 | 0.000 |
-| validate-listing-can-receive-bid | 1.704 | 3.172 | 3.172 | 586.859 | 0.000 |
+| get-all-active-listings | 23.205 | 29.261 | 29.261 | 43.094 | 0.000 |
+| search-filter-listings | 12.806 | 14.871 | 14.871 | 78.091 | 0.000 |
+| get-listing-detail-by-id | 3.583 | 3.930 | 3.930 | 279.125 | 0.000 |
+| validate-listing-can-receive-bid | 1.678 | 2.019 | 2.019 | 595.832 | 0.000 |
 
 Peningkatan terukur terhadap baseline pre-optimization:
 
 | Function | Baseline avg ms | After avg ms | Improvement |
 | --- | ---: | ---: | ---: |
-| get-all-active-listings | 646.756 | 21.907 | 96.61% |
-| search-filter-listings | 328.094 | 12.713 | 96.13% |
+| get-all-active-listings | 646.756 | 23.205 | 96.41% |
+| search-filter-listings | 328.094 | 12.806 | 96.10% |
 
 Klaim improvement >50% hanya berlaku untuk fungsi list/search tersebut. Detail lengkap ada di `docs/architecture/listing-load-testing-report.md`.
 
@@ -278,4 +278,3 @@ Skala 4:
 - [x] metrik average, p95, p99, throughput, dan error rate dicatat.
 - [x] hasil diinterpretasikan.
 - [x] rekomendasi tindak lanjut tersedia.
-
