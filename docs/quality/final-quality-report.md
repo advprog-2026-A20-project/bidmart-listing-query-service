@@ -86,11 +86,9 @@ No OSSF score is claimed because the workflow must run on GitHub.
 
 ## 12. CodeScene Result or Integration Guide
 
-Workflow exists in `.github/workflows/codescene.yml`.
-
 Guide exists in `docs/quality/codescene-guide.md`.
 
-No CodeScene score is claimed until the workflow runs with `CS_ACCESS_TOKEN` or the repo is connected to CodeScene SaaS/GitHub App.
+No CodeScene score is claimed.
 
 ## 13. Selenium Result or Justification
 
