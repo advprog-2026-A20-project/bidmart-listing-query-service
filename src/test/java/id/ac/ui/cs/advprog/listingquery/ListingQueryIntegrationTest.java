@@ -153,6 +153,27 @@ class ListingQueryIntegrationTest {
             .andExpect(jsonPath("$.startingPrice").value(1200.00));
     }
 
+    @Test
+    void statusFilterAndBidValidationShouldUseEffectiveAuctionStatus() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String activeListingId = insertListing(sellerId, "ACTIVE", "1000.00");
+        String wonListingId = insertListing(sellerId, "ACTIVE", "1000.00");
+        insertAuction(activeListingId, "ACTIVE", "1000.00");
+        insertAuction(wonListingId, "WON", "1000.00");
+
+        mockMvc.perform(get("/api/listings").param("status", "WON"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].id").value(wonListingId))
+            .andExpect(jsonPath("$[0].status").value("WON"));
+
+        mockMvc.perform(get("/api/listings/{listingId}/validation", wonListingId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.active").value(false))
+            .andExpect(jsonPath("$.biddable").value(false))
+            .andExpect(jsonPath("$.listingStatus").value("WON"));
+    }
+
     private String insertUser(String email) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
