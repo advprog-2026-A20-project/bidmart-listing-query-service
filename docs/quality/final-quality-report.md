@@ -10,7 +10,7 @@ No false claim is made:
 - Instruction coverage reached `87.88%`.
 - Branch coverage reached `62.69%`.
 - >=50% performance improvement was proven for list/search catalog functions only.
-- SonarQube, OSSF Scorecard, and CodeScene scores are not claimed because they were not executed against external services in this local run.
+- SonarQube and OSSF Scorecard scores are not claimed because they were not executed against external services in this local run.
 
 ## 2. Branch Information
 
@@ -68,7 +68,6 @@ Notable fixes:
 - Gradle `qualityGate`
 - SonarQube config
 - OSSF Scorecard workflow
-- CodeScene guide
 - MockMvc functional testing
 - simple profiling harness via `profilingTest`
 
@@ -86,9 +85,7 @@ No OSSF score is claimed because the workflow must run on GitHub.
 
 ## 12. CodeScene Result or Integration Guide
 
-Guide exists in `docs/quality/codescene-guide.md`.
-
-No CodeScene score is claimed.
+CodeScene is intentionally not implemented in this repository. No CodeScene score is claimed.
 
 ## 13. Selenium Result or Justification
 
@@ -121,7 +118,7 @@ Coverage:
 - Line: `90.35%`
 - Branch: `62.69%`
 
-Quality score >=90 cannot be broadly claimed because SonarQube/Scorecard/CodeScene did not run. The >=90 claim only applies to JaCoCo line coverage.
+Quality score >=90 cannot be broadly claimed because SonarQube/Scorecard did not run. The >=90 claim only applies to JaCoCo line coverage.
 
 ## 17. Files Changed
 
@@ -159,7 +156,7 @@ Output:
 
 - Instruction coverage is below 90%.
 - Branch coverage is far below 90%.
-- SonarQube, OSSF Scorecard, and CodeScene require external execution for real scores.
+- SonarQube and OSSF Scorecard require external execution for real scores.
 - Profiling uses H2 and simple timing, not PostgreSQL/JMH/k6/JMeter.
 - Detail and validation paths were measured but not optimized in this change.
 
@@ -177,7 +174,7 @@ Output:
 - [x] Tidak ada production secret tercommit.
 - [x] SonarQube config tersedia.
 - [x] OSSF Scorecard workflow tersedia.
-- [x] CodeScene integration guide tersedia.
+- [x] CodeScene tidak diterapkan dan tidak diklaim.
 - [x] Selenium justification ditulis.
 - [x] Profiling baseline dilakukan.
 - [x] Optimasi dilakukan berdasarkan bottleneck nyata.

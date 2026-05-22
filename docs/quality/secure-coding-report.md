@@ -43,5 +43,4 @@ Result:
 
 - OSSF Scorecard workflow added.
 - SonarQube project config added.
-- CodeScene guide added.
 - No dependency vulnerability scan result is claimed because OWASP Dependency Check was not added/run in this branch.

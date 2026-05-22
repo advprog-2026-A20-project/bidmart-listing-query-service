@@ -53,16 +53,6 @@ File:
 
 No OSSF Scorecard score is claimed because the workflow must run on GitHub.
 
-## CodeScene
-
-Status: guide added.
-
-File:
-
-- `docs/quality/codescene-guide.md`
-
-No CodeScene score is claimed because CodeScene requires project integration/access.
-
 ## Selenium
 
 Status: not used in this backend service.

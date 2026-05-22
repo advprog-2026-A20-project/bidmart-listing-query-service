@@ -36,4 +36,4 @@ Result: `BUILD SUCCESSFUL`
 
 ## Secret Handling
 
-No token values are stored in workflows. SonarQube/CodeScene tokens are documented as environment/secret requirements only.
+No token values are stored in workflows. SonarQube tokens are documented as environment/secret requirements only.
