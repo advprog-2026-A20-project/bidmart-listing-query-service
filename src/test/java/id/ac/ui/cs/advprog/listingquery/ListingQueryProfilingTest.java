@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.UUID;
@@ -121,7 +122,11 @@ class ListingQueryProfilingTest {
             name,
             Duration.ofNanos((long) statistics.getAverage()).toNanos() / 1_000_000.0,
             Duration.ofNanos(statistics.getMin()).toNanos() / 1_000_000.0,
-            Duration.ofNanos(statistics.getMax()).toNanos() / 1_000_000.0
+            Duration.ofNanos(statistics.getMax()).toNanos() / 1_000_000.0,
+            nanosToMillis(percentile(durationsNanos, 95)),
+            nanosToMillis(percentile(durationsNanos, 99)),
+            throughputPerSecond(durationsNanos),
+            0.0
         );
     }
 
@@ -132,14 +137,18 @@ class ListingQueryProfilingTest {
         Path reportPath = reportDir.resolve("listing-query-" + label + ".csv");
 
         List<String> lines = new ArrayList<>();
-        lines.add("function,average_ms,min_ms,max_ms,dataset_size,warmup_runs,measured_runs");
+        lines.add("function,average_ms,min_ms,max_ms,p95_ms,p99_ms,throughput_ops_sec,error_rate,dataset_size,warmup_runs,measured_runs");
         results.forEach(result -> lines.add(String.format(
             java.util.Locale.ROOT,
-            "%s,%.3f,%.3f,%.3f,%d,%d,%d",
+            "%s,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%d,%d",
             result.functionName(),
             result.averageMillis(),
             result.minMillis(),
             result.maxMillis(),
+            result.p95Millis(),
+            result.p99Millis(),
+            result.throughputOpsPerSecond(),
+            result.errorRate(),
             LISTING_COUNT,
             WARMUP_RUNS,
             MEASURED_RUNS
@@ -148,6 +157,24 @@ class ListingQueryProfilingTest {
 
         Path mirrorPath = tempDir.resolve(reportPath.getFileName());
         Files.write(mirrorPath, lines);
+    }
+
+    private double nanosToMillis(long nanos) {
+        return Duration.ofNanos(nanos).toNanos() / 1_000_000.0;
+    }
+
+    private long percentile(List<Long> durationsNanos, int percentile) {
+        List<Long> sortedDurations = new ArrayList<>(durationsNanos);
+        Collections.sort(sortedDurations);
+        int index = (int) Math.ceil(percentile / 100.0 * sortedDurations.size()) - 1;
+        return sortedDurations.get(Math.max(0, Math.min(index, sortedDurations.size() - 1)));
+    }
+
+    private double throughputPerSecond(List<Long> durationsNanos) {
+        long totalNanos = durationsNanos.stream()
+            .mapToLong(Long::longValue)
+            .sum();
+        return durationsNanos.size() / (totalNanos / 1_000_000_000.0);
     }
 
     private void seedListings(UUID sellerId) {
@@ -240,7 +267,11 @@ class ListingQueryProfilingTest {
         String functionName,
         double averageMillis,
         double minMillis,
-        double maxMillis
+        double maxMillis,
+        double p95Millis,
+        double p99Millis,
+        double throughputOpsPerSecond,
+        double errorRate
     ) {
     }
 }
