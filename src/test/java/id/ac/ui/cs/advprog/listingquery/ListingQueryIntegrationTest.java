@@ -107,6 +107,52 @@ class ListingQueryIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(auctionStatus).isEqualTo("CANCELLED");
     }
 
+    @Test
+    void cancelledListingDetailShouldRemainVisible() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String listingId = insertListing(sellerId, "CANCELLED", "1200.00");
+        String auctionId = insertAuction(listingId, "CANCELLED");
+
+        mockMvc.perform(get("/api/listings/{listingId}", listingId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(listingId))
+            .andExpect(jsonPath("$.status").value("CANCELLED"))
+            .andExpect(jsonPath("$.auctionId").value(auctionId))
+            .andExpect(jsonPath("$.auctionStatus").value("CANCELLED"));
+    }
+
+    @Test
+    void listingSummaryAndDetailPriceShouldFollowHighestAuctionBid() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String listingId = insertListing(sellerId, "ACTIVE", "1200.00");
+        String auctionId = insertAuction(listingId, "ACTIVE");
+        insertBid(auctionId, "1250.00");
+        insertBid(auctionId, "1500.00");
+
+        mockMvc.perform(get("/api/listings"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(listingId))
+            .andExpect(jsonPath("$[0].price").value(1500.00));
+
+        mockMvc.perform(get("/api/listings/{listingId}", listingId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(listingId))
+            .andExpect(jsonPath("$.price").value(1500.00))
+            .andExpect(jsonPath("$.startingPrice").value(1200.00));
+    }
+
+    @Test
+    void listingPriceShouldUseAuctionStartingPriceBeforeAnyBid() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String listingId = insertListing(sellerId, "ACTIVE", "1000.00");
+        insertAuction(listingId, "ACTIVE", "1200.00");
+
+        mockMvc.perform(get("/api/listings/{listingId}", listingId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.price").value(1200.00))
+            .andExpect(jsonPath("$.startingPrice").value(1200.00));
+    }
+
     private String insertUser(String email) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
@@ -121,14 +167,20 @@ class ListingQueryIntegrationTest {
     }
 
     private String insertListing(String sellerId) {
+        return insertListing(sellerId, "ACTIVE", "1200.00");
+    }
+
+    private String insertListing(String sellerId, String status, String price) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
             insert into listing (id, title, description, image_url, price, category, seller_id, status, created_at, updated_at, cancelled_at)
-            values (?, 'Gaming Phone', 'Competitive smartphone', 'https://img.example/phone.jpg', 1200.00, 'ELECTRONICS', ?, 'ACTIVE', ?, null, null)
+            values (?, 'Gaming Phone', 'Competitive smartphone', 'https://img.example/phone.jpg', ?, 'ELECTRONICS', ?, ?, ?, null, null)
             """)
             .setParameter(1, id)
-            .setParameter(2, sellerId)
-            .setParameter(3, Instant.now().truncatedTo(ChronoUnit.SECONDS))
+            .setParameter(2, new java.math.BigDecimal(price))
+            .setParameter(3, sellerId)
+            .setParameter(4, status)
+            .setParameter(5, Instant.now().truncatedTo(ChronoUnit.SECONDS))
             .executeUpdate();
         return id;
     }
@@ -138,31 +190,41 @@ class ListingQueryIntegrationTest {
     }
 
     private String insertAuction(String listingId, String status) {
+        return insertAuction(listingId, status, "1200.00");
+    }
+
+    private String insertAuction(String listingId, String status, String startingPrice) {
         String id = UUID.randomUUID().toString();
         Instant createdAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         entityManager.createNativeQuery("""
             insert into auction (
                 id, listing_id, status, starting_price, reserve_price, minimum_bid_increment,
                 duration_minutes, created_at, starts_at, ends_at, closed_at
-            ) values (?, ?, ?, 1200.00, 1200.00, 10.00, 60, ?, ?, ?, null)
+            ) values (?, ?, ?, ?, 1200.00, 10.00, 60, ?, ?, ?, null)
             """)
             .setParameter(1, id)
             .setParameter(2, listingId)
             .setParameter(3, status)
-            .setParameter(4, createdAt)
-            .setParameter(5, "DRAFT".equals(status) ? null : createdAt)
-            .setParameter(6, "DRAFT".equals(status) ? null : createdAt.plus(2, ChronoUnit.HOURS))
+            .setParameter(4, new java.math.BigDecimal(startingPrice))
+            .setParameter(5, createdAt)
+            .setParameter(6, "DRAFT".equals(status) ? null : createdAt)
+            .setParameter(7, "DRAFT".equals(status) ? null : createdAt.plus(2, ChronoUnit.HOURS))
             .executeUpdate();
         return id;
     }
 
     private void insertBid(String auctionId) {
+        insertBid(auctionId, "1250.00");
+    }
+
+    private void insertBid(String auctionId, String amount) {
         entityManager.createNativeQuery("""
             insert into bid (id, auction_id, amount)
-            values (?, ?, 1250.00)
+            values (?, ?, ?)
             """)
             .setParameter(1, UUID.randomUUID().toString())
             .setParameter(2, auctionId)
+            .setParameter(3, new java.math.BigDecimal(amount))
             .executeUpdate();
     }
 }

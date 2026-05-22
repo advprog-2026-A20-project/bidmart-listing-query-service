@@ -136,9 +136,6 @@ public class ListingQueryService {
         Listing listing = listingRepository.findById(listingId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
         Auction auction = findAuctionByListingId(listingId).orElse(null);
-        if (effectiveListingStatus(listing, auction) == ListingStatus.CANCELLED) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found");
-        }
         return toDetailResponse(listing, auction);
     }
 
@@ -264,7 +261,7 @@ public class ListingQueryService {
             listing.getTitle(),
             listing.getDescription(),
             listing.getImageUrl(),
-            listing.getPrice(),
+            resolveDisplayPrice(listing, auction),
             listing.getCategory(),
             listing.getCategory().pathLabel(),
             listing.getSeller().getId(),
@@ -295,7 +292,7 @@ public class ListingQueryService {
             listing.getTitle(),
             listing.getDescription(),
             listing.getImageUrl(),
-            listing.getPrice(),
+            resolveDisplayPrice(listing, auction),
             auction == null ? null : auction.getStartingPrice(),
             auction == null ? null : auction.getReservePrice(),
             auction == null ? null : auction.getMinimumBidIncrement(),
@@ -316,6 +313,14 @@ public class ListingQueryService {
             listing.getUpdatedAt(),
             listing.getCancelledAt()
         );
+    }
+
+    private BigDecimal resolveDisplayPrice(Listing listing, Auction auction) {
+        if (auction == null) {
+            return listing.getPrice();
+        }
+        return bidRepository.findHighestAmountByAuctionId(auction.getId())
+            .orElse(auction.getStartingPrice());
     }
 
     private void validatePriceRange(BigDecimal minPrice, BigDecimal maxPrice) {
