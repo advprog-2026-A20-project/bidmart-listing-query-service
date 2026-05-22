@@ -22,6 +22,7 @@ import id.ac.ui.cs.advprog.listingquery.repository.AuctionRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.BidRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.ListingRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.UserRepository;
+import id.ac.ui.cs.advprog.listingquery.readmodel.ListingReadModelAssembler;
 import id.ac.ui.cs.advprog.listingquery.validation.ListingRequestValidator;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -67,6 +68,7 @@ public class ListingQueryService {
     private final ListingFactory listingFactory;
     private final ListingLifecyclePolicy lifecyclePolicy;
     private final ListingSpecificationBuilder specificationBuilder;
+    private final ListingReadModelAssembler readModelAssembler;
 
     public ListingQueryService(
         ListingRepository listingRepository,
@@ -76,7 +78,8 @@ public class ListingQueryService {
         ListingRequestValidator requestValidator,
         ListingFactory listingFactory,
         ListingLifecyclePolicy lifecyclePolicy,
-        ListingSpecificationBuilder specificationBuilder
+        ListingSpecificationBuilder specificationBuilder,
+        ListingReadModelAssembler readModelAssembler
     ) {
         this.listingRepository = listingRepository;
         this.auctionRepository = auctionRepository;
@@ -86,6 +89,7 @@ public class ListingQueryService {
         this.listingFactory = listingFactory;
         this.lifecyclePolicy = lifecyclePolicy;
         this.specificationBuilder = specificationBuilder;
+        this.readModelAssembler = readModelAssembler;
     }
 
     @Transactional
@@ -93,7 +97,7 @@ public class ListingQueryService {
         requestValidator.validateCreateRequest(request);
         User seller = loadAuthorizedSeller(sellerId);
         Listing listing = listingFactory.createActiveListing(request, seller, Instant.now());
-        return toSummaryResponse(listingRepository.save(listing));
+        return readModelAssembler.toSummaryResponse(listingRepository.save(listing));
     }
 
     @Transactional(readOnly = true)
@@ -133,7 +137,7 @@ public class ListingQueryService {
         int fromIndex = Math.min((int) safePageable.getOffset(), filteredListings.size());
         int toIndex = Math.min(fromIndex + safePageable.getPageSize(), filteredListings.size());
         return filteredListings.subList(fromIndex, toIndex).stream()
-            .map(this::toSummaryResponse)
+            .map(readModelAssembler::toSummaryResponse)
             .toList();
     }
 
@@ -142,7 +146,7 @@ public class ListingQueryService {
         Listing listing = listingRepository.findById(listingId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
         Auction auction = findAuctionByListingId(listingId).orElse(null);
-        return toDetailResponse(listing, auction);
+        return readModelAssembler.toDetailResponse(listing, auction);
     }
 
     @Transactional(readOnly = true)
@@ -163,7 +167,7 @@ public class ListingQueryService {
         requestValidator.validateUpdateRequest(request);
         Listing listing = getOwnedEditableListing(listingId, sellerId);
         listingFactory.applyEditableUpdate(listing, request, Instant.now());
-        return toDetailResponse(listingRepository.save(listing));
+        return readModelAssembler.toDetailResponse(listingRepository.save(listing));
     }
 
     @Transactional
@@ -182,7 +186,7 @@ public class ListingQueryService {
         listing.setStatus(ListingStatus.CANCELLED);
         listing.setCancelledAt(Instant.now());
         listing.setUpdatedAt(Instant.now());
-        return toDetailResponse(listingRepository.save(listing));
+        return readModelAssembler.toDetailResponse(listingRepository.save(listing));
     }
 
     @Transactional(readOnly = true)
@@ -252,78 +256,6 @@ public class ListingQueryService {
             liveAuctionCount,
             completedAuctionCount
         );
-    }
-
-    private ListingResponse toSummaryResponse(Listing listing) {
-        Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
-        long totalBids = auction == null ? 0 : bidRepository.countByAuctionId(auction.getId());
-        ListingStatus listingStatus = lifecyclePolicy.effectiveStatus(listing, auction);
-
-        return new ListingResponse(
-            listing.getId(),
-            listing.getTitle(),
-            listing.getDescription(),
-            listing.getImageUrl(),
-            resolveDisplayPrice(listing, auction),
-            listing.getCategory(),
-            listing.getCategory().pathLabel(),
-            listing.getSeller().getId(),
-            listing.getSeller().getEmail(),
-            listingStatus,
-            auction == null ? null : auction.getId(),
-            auction == null ? null : auction.getStatus(),
-            auction == null ? null : auction.getEndsAt(),
-            totalBids,
-            totalBids > 0,
-            listing.getCreatedAt(),
-            listing.getUpdatedAt(),
-            listing.getCancelledAt()
-        );
-    }
-
-    private ListingDetailResponse toDetailResponse(Listing listing) {
-        Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
-        return toDetailResponse(listing, auction);
-    }
-
-    private ListingDetailResponse toDetailResponse(Listing listing, Auction auction) {
-        long totalBids = auction == null ? 0 : bidRepository.countByAuctionId(auction.getId());
-        ListingStatus listingStatus = lifecyclePolicy.effectiveStatus(listing, auction);
-
-        return new ListingDetailResponse(
-            listing.getId(),
-            listing.getTitle(),
-            listing.getDescription(),
-            listing.getImageUrl(),
-            resolveDisplayPrice(listing, auction),
-            auction == null ? null : auction.getStartingPrice(),
-            auction == null ? null : auction.getReservePrice(),
-            auction == null ? null : auction.getMinimumBidIncrement(),
-            auction == null ? null : auction.getDurationMinutes(),
-            listing.getCategory(),
-            listing.getCategory().pathLabel(),
-            listing.getSeller().getId(),
-            listing.getSeller().getEmail(),
-            listingStatus,
-            auction == null ? null : auction.getId(),
-            auction == null ? null : auction.getStatus(),
-            auction == null ? null : auction.getStartsAt(),
-            auction == null ? null : auction.getEndsAt(),
-            auction == null ? null : auction.getClosedAt(),
-            totalBids,
-            totalBids > 0,
-            listing.getCreatedAt(),
-            listing.getUpdatedAt(),
-            listing.getCancelledAt()
-        );
-    }
-
-    private BigDecimal resolveDisplayPrice(Listing listing, Auction auction) {
-        if (auction == null) {
-            return listing.getPrice();
-        }
-        return bidRepository.findHighestAmountByAuctionId(auction.getId())
-            .orElse(auction.getStartingPrice());
     }
 
     private boolean matchesAuctionWindow(UUID listingId, Instant endingAfter, Instant endingBefore) {
