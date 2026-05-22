@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
@@ -17,7 +18,13 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "auction")
+@Table(
+    name = "auction",
+    indexes = {
+        @Index(name = "idx_auction_status", columnList = "status"),
+        @Index(name = "idx_auction_ends_at", columnList = "ends_at")
+    }
+)
 public class Auction {
 
     @Id

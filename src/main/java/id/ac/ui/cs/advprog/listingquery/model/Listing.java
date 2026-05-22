@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
@@ -26,7 +27,16 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "listing")
+@Table(
+    name = "listing",
+    indexes = {
+        @Index(name = "idx_listing_status", columnList = "status"),
+        @Index(name = "idx_listing_category", columnList = "category"),
+        @Index(name = "idx_listing_seller_id", columnList = "seller_id"),
+        @Index(name = "idx_listing_created_at", columnList = "created_at"),
+        @Index(name = "idx_listing_price", columnList = "price")
+    }
+)
 public class Listing {
 
     @Id

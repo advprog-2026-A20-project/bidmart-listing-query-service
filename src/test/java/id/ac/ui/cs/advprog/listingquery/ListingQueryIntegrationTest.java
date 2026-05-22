@@ -269,6 +269,53 @@ class ListingQueryIntegrationTest {
             .andExpect(jsonPath("$.completedAuctionCount").value(1));
     }
 
+    @Test
+    void listEndpointShouldClampMaxPageSize() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        for (int index = 0; index < 60; index++) {
+            insertListing(sellerId, "ACTIVE", "1000.00");
+        }
+
+        mockMvc.perform(get("/api/listings").param("size", "999"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(50));
+    }
+
+    @Test
+    void listEndpointShouldRejectUnsupportedSortField() throws Exception {
+        mockMvc.perform(get("/api/listings").param("sort", "seller.password,asc"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Unsupported sort field: seller.password"));
+    }
+
+    @Test
+    void createListingShouldIgnoreMassAssignedStatusAndSellerIdFields() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String attackerSellerId = UUID.randomUUID().toString();
+
+        mockMvc.perform(post("/api/listings")
+                .header("Authorization", "Bearer " + jwtFor(sellerId, "seller@example.com", "SELLER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "title": "Safe Listing",
+                      "description": "Mass assignment attempt",
+                      "imageUrl": "https://img.example/safe.jpg",
+                      "price": 1200.00,
+                      "category": "ELECTRONICS",
+                      "status": "CANCELLED",
+                      "sellerId": "%s",
+                      "currentPrice": 1.00,
+                      "bidCount": 999,
+                      "winnerId": "%s"
+                    }
+                    """.formatted(attackerSellerId, UUID.randomUUID())))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.sellerId").value(sellerId))
+            .andExpect(jsonPath("$.price").value(1200.00));
+    }
+
     private String insertUser(String email) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
