@@ -1,0 +1,58 @@
+name: CodeScene
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base ref for CodeScene delta analysis"
+        required: false
+        default: "origin/main"
+
+permissions:
+  contents: read
+
+jobs:
+  codescene-delta:
+    runs-on: ubuntu-latest
+    env:
+      CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
+      BASE_REF: ${{ github.event.inputs.base_ref || 'origin/main' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CodeScene token
+        id: token
+        shell: bash
+        run: |
+          if [ -z "${CS_ACCESS_TOKEN}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "CS_ACCESS_TOKEN is not configured. Skipping CodeScene CLI analysis."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install CodeScene CLI
+        if: steps.token.outputs.available == 'true'
+        shell: bash
+        run: |
+          curl -fsSL https://downloads.codescene.io/enterprise/cli/install-cs-tool.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run CodeScene delta analysis
+        if: steps.token.outputs.available == 'true'
+        shell: bash
+        run: |
+          mkdir -p build/reports/codescene
+          cs delta "$BASE_REF" HEAD --output-format json --pretty \
+            | tee build/reports/codescene/delta-analysis.json
+
+      - name: Upload CodeScene report
+        if: steps.token.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codescene-delta-analysis
+          path: build/reports/codescene/delta-analysis.json

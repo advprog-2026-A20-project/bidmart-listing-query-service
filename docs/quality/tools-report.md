@@ -55,13 +55,14 @@ No OSSF Scorecard score is claimed because the workflow must run on GitHub.
 
 ## CodeScene
 
-Status: guide added.
+Status: GitHub Actions workflow and guide added.
 
-File:
+Files:
 
+- `.github/workflows/codescene.yml`
 - `docs/quality/codescene-guide.md`
 
-No CodeScene score is claimed because CodeScene requires project integration/access.
+No CodeScene score is claimed until the workflow runs with `CS_ACCESS_TOKEN` or the repository is connected to CodeScene SaaS/GitHub App.
 
 ## Selenium
 
