@@ -56,6 +56,16 @@ tasks.named('test') {
     finalizedBy tasks.named('jacocoTestReport')
 }
 
+tasks.register('profilingTest', Test) {
+    group = 'verification'
+    description = 'Run profiling-tagged tests and write timing output under build/reports/profiling.'
+    useJUnitPlatform {
+        includeTags 'profiling'
+    }
+    systemProperty 'profiling.label', System.getProperty('profiling.label', 'baseline')
+    shouldRunAfter test
+}
+
 jacocoTestReport {
     dependsOn test
     reports {
