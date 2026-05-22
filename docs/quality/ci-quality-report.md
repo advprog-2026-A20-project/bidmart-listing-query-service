@@ -24,6 +24,8 @@ Runs:
 
 Scorecard is configured for `push` on `main`, scheduled runs, branch protection rule events, and manual `workflow_dispatch`. It is not triggered on `staging` push because `ossf/scorecard-action` supports the default branch for push events.
 
+Workflow-level permissions are `read-all`; write permissions required for SARIF upload and OIDC publishing are scoped to the `scorecard` job. This follows Scorecard publishing restrictions that reject workflow-level write permissions.
+
 ## Local Quality Command
 
 ```powershell
