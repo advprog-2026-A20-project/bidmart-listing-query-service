@@ -8,6 +8,8 @@ import id.ac.ui.cs.advprog.listingquery.dto.ListingResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingUpdateRequest;
 import id.ac.ui.cs.advprog.listingquery.dto.PublicSellerProfileResponse;
 import id.ac.ui.cs.advprog.listingquery.factory.ListingFactory;
+import id.ac.ui.cs.advprog.listingquery.filter.ListingFilterCriteria;
+import id.ac.ui.cs.advprog.listingquery.filter.ListingSpecificationBuilder;
 import id.ac.ui.cs.advprog.listingquery.lifecycle.ListingLifecyclePolicy;
 import id.ac.ui.cs.advprog.listingquery.model.Auction;
 import id.ac.ui.cs.advprog.listingquery.model.AuctionStatus;
@@ -64,6 +66,7 @@ public class ListingQueryService {
     private final ListingRequestValidator requestValidator;
     private final ListingFactory listingFactory;
     private final ListingLifecyclePolicy lifecyclePolicy;
+    private final ListingSpecificationBuilder specificationBuilder;
 
     public ListingQueryService(
         ListingRepository listingRepository,
@@ -72,7 +75,8 @@ public class ListingQueryService {
         UserRepository userRepository,
         ListingRequestValidator requestValidator,
         ListingFactory listingFactory,
-        ListingLifecyclePolicy lifecyclePolicy
+        ListingLifecyclePolicy lifecyclePolicy,
+        ListingSpecificationBuilder specificationBuilder
     ) {
         this.listingRepository = listingRepository;
         this.auctionRepository = auctionRepository;
@@ -81,6 +85,7 @@ public class ListingQueryService {
         this.requestValidator = requestValidator;
         this.listingFactory = listingFactory;
         this.lifecyclePolicy = lifecyclePolicy;
+        this.specificationBuilder = specificationBuilder;
     }
 
     @Transactional
@@ -115,11 +120,9 @@ public class ListingQueryService {
             safeSort
         );
 
-        Specification<Listing> specification = distinctResults()
-            .and(hasCategoryOrDescendant(category))
-            .and(matchesKeyword(keyword))
-            .and(hasMinPrice(minPrice))
-            .and(hasMaxPrice(maxPrice));
+        Specification<Listing> specification = specificationBuilder.build(
+            new ListingFilterCriteria(category, keyword, minPrice, maxPrice)
+        );
 
         List<Listing> matchingListings = listingRepository.findAll(specification, safeSort);
         List<Listing> filteredListings = matchingListings.stream()
@@ -321,52 +324,6 @@ public class ListingQueryService {
         }
         return bidRepository.findHighestAmountByAuctionId(auction.getId())
             .orElse(auction.getStartingPrice());
-    }
-
-    private Specification<Listing> distinctResults() {
-        return (root, query, criteriaBuilder) -> {
-            query.distinct(true);
-            return criteriaBuilder.conjunction();
-        };
-    }
-
-    private Specification<Listing> hasCategoryOrDescendant(ListingCategory category) {
-        if (category == null) {
-            return null;
-        }
-
-        List<ListingCategory> matchingCategories = Arrays.stream(ListingCategory.values())
-            .filter(candidate -> candidate.isSameOrDescendantOf(category))
-            .toList();
-
-        return (root, query, criteriaBuilder) -> root.get("category").in(matchingCategories);
-    }
-
-    private Specification<Listing> matchesKeyword(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return null;
-        }
-        String normalizedKeyword = "%" + keyword.trim().toLowerCase() + "%";
-        return (root, query, criteriaBuilder) -> criteriaBuilder.or(
-            criteriaBuilder.like(criteriaBuilder.lower(root.get("title")), normalizedKeyword),
-            criteriaBuilder.like(criteriaBuilder.lower(root.get("description")), normalizedKeyword)
-        );
-    }
-
-    private Specification<Listing> hasMinPrice(BigDecimal minPrice) {
-        if (minPrice == null) {
-            return null;
-        }
-        return (root, query, criteriaBuilder) ->
-            criteriaBuilder.greaterThanOrEqualTo(root.get("price"), minPrice);
-    }
-
-    private Specification<Listing> hasMaxPrice(BigDecimal maxPrice) {
-        if (maxPrice == null) {
-            return null;
-        }
-        return (root, query, criteriaBuilder) ->
-            criteriaBuilder.lessThanOrEqualTo(root.get("price"), maxPrice);
     }
 
     private boolean matchesAuctionWindow(UUID listingId, Instant endingAfter, Instant endingBefore) {
