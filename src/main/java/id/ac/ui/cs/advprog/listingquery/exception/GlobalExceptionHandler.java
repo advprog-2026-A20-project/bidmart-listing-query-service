@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,6 +23,26 @@ public class GlobalExceptionHandler {
             status.value(),
             status.getReasonPhrase(),
             exception.getReason(),
+            request.getRequestURI()
+        ));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiErrorResponse> handleValidationException(
+        MethodArgumentNotValidException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        String message = exception.getBindingResult().getFieldErrors().stream()
+            .findFirst()
+            .map(fieldError -> fieldError.getDefaultMessage())
+            .orElse("Invalid request");
+
+        return ResponseEntity.status(status).body(new ApiErrorResponse(
+            Instant.now(),
+            status.value(),
+            status.getReasonPhrase(),
+            message,
             request.getRequestURI()
         ));
     }
