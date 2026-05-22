@@ -1,6 +1,9 @@
 package id.ac.ui.cs.advprog.listingquery;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import jakarta.persistence.EntityManager;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -13,8 +16,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import id.ac.ui.cs.advprog.listingquery.service.ListingQueryService;
+import org.springframework.http.MediaType;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -23,12 +29,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.jpa.hibernate.ddl-auto=create-drop"
+    "spring.jpa.hibernate.ddl-auto=create-drop",
+    "security.jwt.secret=test-secret-for-listing-query-12345"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 @Transactional
 class ListingQueryIntegrationTest {
+
+    private static final String JWT_SECRET = "test-secret-for-listing-query-12345";
 
     @Autowired
     private MockMvc mockMvc;
@@ -174,6 +183,92 @@ class ListingQueryIntegrationTest {
             .andExpect(jsonPath("$.listingStatus").value("WON"));
     }
 
+    @Test
+    void createListingShouldRequireSellerAuthentication() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String createBody = """
+            {
+              "title": "Desk Setup",
+              "description": "Standing desk",
+              "imageUrl": "https://img.example/desk.jpg",
+              "price": 750.00,
+              "category": "HOME_LIVING_FURNITURE"
+            }
+            """;
+
+        mockMvc.perform(post("/api/listings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createBody))
+            .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/listings")
+                .header("Authorization", "Bearer " + jwtFor(sellerId, "seller@example.com", "SELLER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createBody))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.title").value("Desk Setup"))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.sellerEmail").value("seller@example.com"));
+    }
+
+    @Test
+    void invalidCreateRequestShouldReturnBadRequestWithoutStackTrace() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+
+        mockMvc.perform(post("/api/listings")
+                .header("Authorization", "Bearer " + jwtFor(sellerId, "seller@example.com", "SELLER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "title": "",
+                      "description": "Invalid",
+                      "price": 0
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").exists())
+            .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    void updateListingWithExistingBidShouldBeRejected() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String listingId = insertListing(sellerId, "ACTIVE", "1000.00");
+        String auctionId = insertAuction(listingId, "ACTIVE", "1000.00");
+        insertBid(auctionId, "1100.00");
+
+        mockMvc.perform(put("/api/listings/{listingId}", listingId)
+                .header("Authorization", "Bearer " + jwtFor(sellerId, "seller@example.com", "SELLER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "description": "Updated description",
+                      "imageUrl": "https://img.example/new.jpg",
+                      "category": "ELECTRONICS"
+                    }
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Listing cannot be modified because it already has bids"));
+    }
+
+    @Test
+    void publicSellerProfileShouldExposeListingAndAuctionCounts() throws Exception {
+        String sellerId = insertUser("seller@example.com");
+        String activeListingId = insertListing(sellerId, "ACTIVE", "1000.00");
+        String wonListingId = insertListing(sellerId, "ACTIVE", "1000.00");
+        insertAuction(activeListingId, "ACTIVE", "1000.00");
+        insertAuction(wonListingId, "WON", "1000.00");
+
+        mockMvc.perform(get("/api/users/{userId}/public-profile", sellerId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(sellerId))
+            .andExpect(jsonPath("$.email").value("seller@example.com"))
+            .andExpect(jsonPath("$.role").value("SELLER"))
+            .andExpect(jsonPath("$.activeListingCount").value(2))
+            .andExpect(jsonPath("$.liveAuctionCount").value(1))
+            .andExpect(jsonPath("$.completedAuctionCount").value(1));
+    }
+
     private String insertUser(String email) {
         String id = UUID.randomUUID().toString();
         entityManager.createNativeQuery("""
@@ -247,5 +342,14 @@ class ListingQueryIntegrationTest {
             .setParameter(2, auctionId)
             .setParameter(3, new java.math.BigDecimal(amount))
             .executeUpdate();
+    }
+
+    private String jwtFor(String userId, String email, String role) {
+        return Jwts.builder()
+            .setSubject(userId)
+            .claim("email", email)
+            .claim("role", role)
+            .signWith(Keys.hmacShaKeyFor(JWT_SECRET.getBytes(StandardCharsets.UTF_8)))
+            .compact();
     }
 }

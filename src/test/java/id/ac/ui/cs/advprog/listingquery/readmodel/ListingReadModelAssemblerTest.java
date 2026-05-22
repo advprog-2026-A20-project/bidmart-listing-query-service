@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -80,7 +81,7 @@ class ListingReadModelAssemblerTest {
 
         when(auctionRepository.findByListingIdIn(List.of(firstListing.getId(), secondListing.getId())))
             .thenReturn(List.of(firstAuction, secondAuction));
-        when(bidRepository.summarizeByAuctionIds(List.of(firstAuction.getId(), secondAuction.getId())))
+        when(bidRepository.summarizeByAuctionIds(anyCollection()))
             .thenReturn(List.of(firstSummary));
 
         List<ListingReadModel> readModels = assembler.assembleAll(List.of(firstListing, secondListing));
