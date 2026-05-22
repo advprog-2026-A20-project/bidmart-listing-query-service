@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'jacoco'
     id 'org.springframework.boot' version '3.5.11'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -29,9 +30,12 @@ if (project != rootProject) {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
     implementation 'org.hibernate.orm:hibernate-core'
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -39,6 +43,8 @@ dependencies {
 
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'com.h2database:h2'
@@ -46,7 +52,54 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'profiling'
+    }
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.register('profilingTest', Test) {
+    group = 'verification'
+    description = 'Run profiling-tagged tests and write timing output under build/reports/profiling.'
+    useJUnitPlatform {
+        includeTags 'profiling'
+    }
+    systemProperty 'profiling.label', System.getProperty('profiling.label', 'baseline')
+    shouldRunAfter test
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.90
+            }
+        }
+        rule {
+            limit {
+                counter = 'INSTRUCTION'
+                value = 'COVEREDRATIO'
+                minimum = 0.85
+            }
+        }
+    }
+}
+
+tasks.register('qualityGate') {
+    group = 'verification'
+    description = 'Run tests and JaCoCo coverage verification for listing-query-service.'
+    dependsOn test, jacocoTestCoverageVerification
 }
 
 tasks.register('bootRunLocal', org.springframework.boot.gradle.tasks.run.BootRun) {
