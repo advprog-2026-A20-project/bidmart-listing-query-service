@@ -12,6 +12,7 @@ import id.ac.ui.cs.advprog.listingquery.repository.AuctionRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.BidRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,33 @@ class ListingReadModelAssemblerTest {
         assertThat(readModel.hasBids()).isFalse();
     }
 
+    @Test
+    void assembleAllShouldBatchAuctionsAndBidSummaries() {
+        Listing firstListing = listing();
+        Listing secondListing = listing();
+        Auction firstAuction = auction(firstListing, AuctionStatus.ACTIVE);
+        Auction secondAuction = auction(secondListing, AuctionStatus.WON);
+        BidRepository.AuctionBidSummary firstSummary = bidSummary(
+            firstAuction.getId(),
+            3L,
+            BigDecimal.valueOf(1800)
+        );
+
+        when(auctionRepository.findByListingIdIn(List.of(firstListing.getId(), secondListing.getId())))
+            .thenReturn(List.of(firstAuction, secondAuction));
+        when(bidRepository.summarizeByAuctionIds(List.of(firstAuction.getId(), secondAuction.getId())))
+            .thenReturn(List.of(firstSummary));
+
+        List<ListingReadModel> readModels = assembler.assembleAll(List.of(firstListing, secondListing));
+
+        assertThat(readModels).hasSize(2);
+        assertThat(readModels.get(0).displayPrice()).isEqualByComparingTo("1800");
+        assertThat(readModels.get(0).totalBids()).isEqualTo(3);
+        assertThat(readModels.get(1).status()).isEqualTo(ListingStatus.WON);
+        assertThat(readModels.get(1).displayPrice()).isEqualByComparingTo("1200");
+        assertThat(readModels.get(1).totalBids()).isZero();
+    }
+
     private Listing listing() {
         return Listing.builder()
             .id(UUID.randomUUID())
@@ -93,5 +121,24 @@ class ListingReadModelAssemblerTest {
         ReflectionTestUtils.setField(seller, "email", "seller@example.com");
         ReflectionTestUtils.setField(seller, "role", Role.SELLER);
         return seller;
+    }
+
+    private BidRepository.AuctionBidSummary bidSummary(UUID auctionId, long totalBids, BigDecimal highestAmount) {
+        return new BidRepository.AuctionBidSummary() {
+            @Override
+            public UUID getAuctionId() {
+                return auctionId;
+            }
+
+            @Override
+            public long getTotalBids() {
+                return totalBids;
+            }
+
+            @Override
+            public BigDecimal getHighestAmount() {
+                return highestAmount;
+            }
+        };
     }
 }

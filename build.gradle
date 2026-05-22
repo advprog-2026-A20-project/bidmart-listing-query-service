@@ -52,7 +52,9 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'profiling'
+    }
     finalizedBy tasks.named('jacocoTestReport')
 }
 

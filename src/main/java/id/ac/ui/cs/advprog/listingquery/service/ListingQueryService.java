@@ -22,6 +22,7 @@ import id.ac.ui.cs.advprog.listingquery.repository.AuctionRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.BidRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.ListingRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.UserRepository;
+import id.ac.ui.cs.advprog.listingquery.readmodel.ListingReadModel;
 import id.ac.ui.cs.advprog.listingquery.readmodel.ListingReadModelAssembler;
 import id.ac.ui.cs.advprog.listingquery.validation.ListingRequestValidator;
 import java.math.BigDecimal;
@@ -44,10 +45,6 @@ public class ListingQueryService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 50;
-    private static final List<ListingStatus> PUBLIC_LISTING_STATUSES = List.of(
-        ListingStatus.ACTIVE,
-        ListingStatus.EXTENDED
-    );
     private static final List<AuctionStatus> LIVE_AUCTION_STATUSES = List.of(
         AuctionStatus.DRAFT,
         AuctionStatus.ACTIVE,
@@ -129,14 +126,14 @@ public class ListingQueryService {
         );
 
         List<Listing> matchingListings = listingRepository.findAll(specification, safeSort);
-        List<Listing> filteredListings = matchingListings.stream()
-            .filter(listing -> matchesStatusFilter(listing, status))
-            .filter(listing -> matchesAuctionWindow(listing.getId(), endingAfter, endingBefore))
+        List<ListingReadModel> filteredReadModels = readModelAssembler.assembleAll(matchingListings).stream()
+            .filter(readModel -> matchesStatusFilter(readModel, status))
+            .filter(readModel -> matchesAuctionWindow(readModel.auction(), endingAfter, endingBefore))
             .toList();
 
-        int fromIndex = Math.min((int) safePageable.getOffset(), filteredListings.size());
-        int toIndex = Math.min(fromIndex + safePageable.getPageSize(), filteredListings.size());
-        return filteredListings.subList(fromIndex, toIndex).stream()
+        int fromIndex = Math.min((int) safePageable.getOffset(), filteredReadModels.size());
+        int toIndex = Math.min(fromIndex + safePageable.getPageSize(), filteredReadModels.size());
+        return filteredReadModels.subList(fromIndex, toIndex).stream()
             .map(readModelAssembler::toSummaryResponse)
             .toList();
     }
@@ -258,12 +255,11 @@ public class ListingQueryService {
         );
     }
 
-    private boolean matchesAuctionWindow(UUID listingId, Instant endingAfter, Instant endingBefore) {
+    private boolean matchesAuctionWindow(Auction auction, Instant endingAfter, Instant endingBefore) {
         if (endingAfter == null && endingBefore == null) {
             return true;
         }
 
-        Auction auction = findAuctionByListingId(listingId).orElse(null);
         if (auction == null || auction.getEndsAt() == null) {
             return false;
         }
@@ -304,18 +300,11 @@ public class ListingQueryService {
         return listing;
     }
 
-    private boolean isPublicListing(Listing listing) {
-        Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
-        return PUBLIC_LISTING_STATUSES.contains(lifecyclePolicy.effectiveStatus(listing, auction));
-    }
-
-    private boolean matchesStatusFilter(Listing listing, ListingStatus requestedStatus) {
-        Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
-        ListingStatus effectiveStatus = lifecyclePolicy.effectiveStatus(listing, auction);
+    private boolean matchesStatusFilter(ListingReadModel readModel, ListingStatus requestedStatus) {
         if (requestedStatus == null) {
             return true;
         }
-        return effectiveStatus == requestedStatus;
+        return readModel.status() == requestedStatus;
     }
 
     private ListingCategoryNodeResponse toCategoryNode(ListingCategory category) {
