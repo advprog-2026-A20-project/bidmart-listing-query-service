@@ -41,6 +41,12 @@ Jalankan quality gate dengan coverage:
 ./gradlew qualityGate
 ```
 
+Jalankan profiling catalog/read path:
+
+```bash
+./gradlew "-Dprofiling.label=optimized" profilingTest --rerun-tasks
+```
+
 Build jar:
 
 ```bash
@@ -81,6 +87,7 @@ Refactor TDD/SOLID terbaru terdokumentasi di:
 - `docs/solid-review.md`
 - `docs/design-patterns.md`
 - `docs/before-after-design.md`
+- `docs/quality/final-quality-report.md`
 
 Design pattern yang diterapkan:
 
