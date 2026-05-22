@@ -22,6 +22,8 @@ Runs:
 - OSSF Scorecard
 - SARIF upload
 
+Scorecard is configured for `push` on `main`, scheduled runs, branch protection rule events, and manual `workflow_dispatch`. It is not triggered on `staging` push because `ossf/scorecard-action` supports the default branch for push events.
+
 ## Local Quality Command
 
 ```powershell
