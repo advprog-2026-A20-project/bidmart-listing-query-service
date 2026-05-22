@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'jacoco'
     id 'org.springframework.boot' version '3.5.11'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -52,6 +53,32 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.45
+            }
+        }
+    }
+}
+
+tasks.register('qualityGate') {
+    group = 'verification'
+    description = 'Run tests and JaCoCo coverage verification for listing-query-service.'
+    dependsOn test, jacocoTestCoverageVerification
 }
 
 tasks.register('bootRunLocal', org.springframework.boot.gradle.tasks.run.BootRun) {
