@@ -27,10 +27,10 @@ This removes per-listing auction/bid lookup on list/search paths.
 
 | Function | Baseline avg ms | Optimized avg ms | Improvement |
 | --- | ---: | ---: | ---: |
-| get-all-active-listings | 646.756 | 23.064 | 96.43% |
-| search-filter-listings | 328.094 | 14.420 | 95.61% |
-| get-listing-detail-by-id | 1.809 | 4.166 | -130.29% |
-| validate-listing-can-receive-bid | 0.574 | 1.740 | -203.14% |
+| get-all-active-listings | 646.756 | 23.224 | 96.41% |
+| search-filter-listings | 328.094 | 13.586 | 95.86% |
+| get-listing-detail-by-id | 1.809 | 4.648 | -156.94% |
+| validate-listing-can-receive-bid | 0.574 | 1.816 | -216.38% |
 
 ## Evidence Commands
 

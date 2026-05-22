@@ -105,8 +105,8 @@ See:
 
 Achieved for:
 
-- `get-all-active-listings`: `96.43%` faster
-- `search-filter-listings`: `95.61%` faster
+- `get-all-active-listings`: `96.41%` faster
+- `search-filter-listings`: `95.86%` faster
 
 Not achieved/claimed for:
 
