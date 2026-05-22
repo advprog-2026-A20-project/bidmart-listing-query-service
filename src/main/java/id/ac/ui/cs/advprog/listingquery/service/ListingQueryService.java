@@ -18,6 +18,7 @@ import id.ac.ui.cs.advprog.listingquery.model.ListingCategory;
 import id.ac.ui.cs.advprog.listingquery.model.ListingStatus;
 import id.ac.ui.cs.advprog.listingquery.model.Role;
 import id.ac.ui.cs.advprog.listingquery.model.User;
+import id.ac.ui.cs.advprog.listingquery.pagination.ListingPageRequestPolicy;
 import id.ac.ui.cs.advprog.listingquery.repository.AuctionRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.BidRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.ListingRepository;
@@ -31,9 +32,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -43,8 +42,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ListingQueryService {
 
-    private static final int DEFAULT_PAGE_SIZE = 20;
-    private static final int MAX_PAGE_SIZE = 50;
     private static final List<AuctionStatus> LIVE_AUCTION_STATUSES = List.of(
         AuctionStatus.DRAFT,
         AuctionStatus.ACTIVE,
@@ -66,6 +63,7 @@ public class ListingQueryService {
     private final ListingLifecyclePolicy lifecyclePolicy;
     private final ListingSpecificationBuilder specificationBuilder;
     private final ListingReadModelAssembler readModelAssembler;
+    private final ListingPageRequestPolicy pageRequestPolicy;
 
     public ListingQueryService(
         ListingRepository listingRepository,
@@ -76,7 +74,8 @@ public class ListingQueryService {
         ListingFactory listingFactory,
         ListingLifecyclePolicy lifecyclePolicy,
         ListingSpecificationBuilder specificationBuilder,
-        ListingReadModelAssembler readModelAssembler
+        ListingReadModelAssembler readModelAssembler,
+        ListingPageRequestPolicy pageRequestPolicy
     ) {
         this.listingRepository = listingRepository;
         this.auctionRepository = auctionRepository;
@@ -87,6 +86,7 @@ public class ListingQueryService {
         this.lifecyclePolicy = lifecyclePolicy;
         this.specificationBuilder = specificationBuilder;
         this.readModelAssembler = readModelAssembler;
+        this.pageRequestPolicy = pageRequestPolicy;
     }
 
     @Transactional
@@ -110,22 +110,13 @@ public class ListingQueryService {
     ) {
         requestValidator.validatePriceRange(minPrice, maxPrice);
 
-        int requestedPageSize = pageable.isPaged() ? pageable.getPageSize() : DEFAULT_PAGE_SIZE;
-        int safePageNumber = pageable.isPaged() ? Math.max(pageable.getPageNumber(), 0) : 0;
-        Sort safeSort = pageable.getSort().isSorted()
-            ? pageable.getSort()
-            : Sort.by(Sort.Direction.DESC, "createdAt");
-        Pageable safePageable = PageRequest.of(
-            safePageNumber,
-            Math.max(1, Math.min(requestedPageSize, MAX_PAGE_SIZE)),
-            safeSort
-        );
+        Pageable safePageable = pageRequestPolicy.sanitize(pageable);
 
         Specification<Listing> specification = specificationBuilder.build(
             new ListingFilterCriteria(category, keyword, minPrice, maxPrice)
         );
 
-        List<Listing> matchingListings = listingRepository.findAll(specification, safeSort);
+        List<Listing> matchingListings = listingRepository.findAll(specification, safePageable.getSort());
         List<ListingReadModel> filteredReadModels = readModelAssembler.assembleAll(matchingListings).stream()
             .filter(readModel -> matchesStatusFilter(readModel, status))
             .filter(readModel -> matchesAuctionWindow(readModel.auction(), endingAfter, endingBefore))
