@@ -7,6 +7,8 @@ import id.ac.ui.cs.advprog.listingquery.dto.ListingDetailResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingResponse;
 import id.ac.ui.cs.advprog.listingquery.dto.ListingUpdateRequest;
 import id.ac.ui.cs.advprog.listingquery.dto.PublicSellerProfileResponse;
+import id.ac.ui.cs.advprog.listingquery.factory.ListingFactory;
+import id.ac.ui.cs.advprog.listingquery.lifecycle.ListingLifecyclePolicy;
 import id.ac.ui.cs.advprog.listingquery.model.Auction;
 import id.ac.ui.cs.advprog.listingquery.model.AuctionStatus;
 import id.ac.ui.cs.advprog.listingquery.model.Listing;
@@ -18,6 +20,7 @@ import id.ac.ui.cs.advprog.listingquery.repository.AuctionRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.BidRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.ListingRepository;
 import id.ac.ui.cs.advprog.listingquery.repository.UserRepository;
+import id.ac.ui.cs.advprog.listingquery.validation.ListingRequestValidator;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Arrays;
@@ -58,33 +61,33 @@ public class ListingQueryService {
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
     private final UserRepository userRepository;
+    private final ListingRequestValidator requestValidator;
+    private final ListingFactory listingFactory;
+    private final ListingLifecyclePolicy lifecyclePolicy;
 
     public ListingQueryService(
         ListingRepository listingRepository,
         AuctionRepository auctionRepository,
         BidRepository bidRepository,
-        UserRepository userRepository
+        UserRepository userRepository,
+        ListingRequestValidator requestValidator,
+        ListingFactory listingFactory,
+        ListingLifecyclePolicy lifecyclePolicy
     ) {
         this.listingRepository = listingRepository;
         this.auctionRepository = auctionRepository;
         this.bidRepository = bidRepository;
         this.userRepository = userRepository;
+        this.requestValidator = requestValidator;
+        this.listingFactory = listingFactory;
+        this.lifecyclePolicy = lifecyclePolicy;
     }
 
     @Transactional
     public ListingResponse createListing(ListingCreateRequest request, UUID sellerId) {
-        validateCreateRequest(request);
+        requestValidator.validateCreateRequest(request);
         User seller = loadAuthorizedSeller(sellerId);
-        Listing listing = Listing.builder()
-            .title(request.title().trim())
-            .description(request.description().trim())
-            .imageUrl(normalizeImageUrl(request.imageUrl()))
-            .price(request.price())
-            .category(resolveCategory(request.category()))
-            .seller(seller)
-            .status(ListingStatus.ACTIVE)
-            .createdAt(Instant.now())
-            .build();
+        Listing listing = listingFactory.createActiveListing(request, seller, Instant.now());
         return toSummaryResponse(listingRepository.save(listing));
     }
 
@@ -99,7 +102,7 @@ public class ListingQueryService {
         Instant endingAfter,
         Instant endingBefore
     ) {
-        validatePriceRange(minPrice, maxPrice);
+        requestValidator.validatePriceRange(minPrice, maxPrice);
 
         int requestedPageSize = pageable.isPaged() ? pageable.getPageSize() : DEFAULT_PAGE_SIZE;
         int safePageNumber = pageable.isPaged() ? Math.max(pageable.getPageNumber(), 0) : 0;
@@ -154,12 +157,9 @@ public class ListingQueryService {
 
     @Transactional
     public ListingDetailResponse updateListing(UUID listingId, ListingUpdateRequest request, UUID sellerId) {
-        validateUpdateRequest(request);
+        requestValidator.validateUpdateRequest(request);
         Listing listing = getOwnedEditableListing(listingId, sellerId);
-        listing.setDescription(request.description().trim());
-        listing.setImageUrl(normalizeImageUrl(request.imageUrl()));
-        listing.setCategory(resolveCategory(request.category()));
-        listing.setUpdatedAt(Instant.now());
+        listingFactory.applyEditableUpdate(listing, request, Instant.now());
         return toDetailResponse(listingRepository.save(listing));
     }
 
@@ -167,7 +167,7 @@ public class ListingQueryService {
     public ListingDetailResponse cancelListing(UUID listingId, UUID sellerId) {
         Listing listing = getOwnedEditableListing(listingId, sellerId);
         findAuctionByListingId(listingId).ifPresent(auction -> {
-            if (auction.getStatus() != AuctionStatus.DRAFT && auction.getStatus() != AuctionStatus.ACTIVE) {
+            if (!lifecyclePolicy.canCancelAuction(auction.getStatus())) {
                 throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Auction cannot be cancelled in status " + auction.getStatus()
@@ -188,8 +188,8 @@ public class ListingQueryService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
         Auction auction = findAuctionByListingId(listingId).orElse(null);
 
-        ListingStatus listingStatus = effectiveListingStatus(listing, auction);
-        boolean active = isListingOpenForBid(listingStatus);
+        ListingStatus listingStatus = lifecyclePolicy.effectiveStatus(listing, auction);
+        boolean active = lifecyclePolicy.canReceiveBid(listingStatus);
         if (!active) {
             return new ListingBidValidationResponse(
                 listing.getId(),
@@ -254,7 +254,7 @@ public class ListingQueryService {
     private ListingResponse toSummaryResponse(Listing listing) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
         long totalBids = auction == null ? 0 : bidRepository.countByAuctionId(auction.getId());
-        ListingStatus listingStatus = effectiveListingStatus(listing, auction);
+        ListingStatus listingStatus = lifecyclePolicy.effectiveStatus(listing, auction);
 
         return new ListingResponse(
             listing.getId(),
@@ -285,7 +285,7 @@ public class ListingQueryService {
 
     private ListingDetailResponse toDetailResponse(Listing listing, Auction auction) {
         long totalBids = auction == null ? 0 : bidRepository.countByAuctionId(auction.getId());
-        ListingStatus listingStatus = effectiveListingStatus(listing, auction);
+        ListingStatus listingStatus = lifecyclePolicy.effectiveStatus(listing, auction);
 
         return new ListingDetailResponse(
             listing.getId(),
@@ -321,15 +321,6 @@ public class ListingQueryService {
         }
         return bidRepository.findHighestAmountByAuctionId(auction.getId())
             .orElse(auction.getStartingPrice());
-    }
-
-    private void validatePriceRange(BigDecimal minPrice, BigDecimal maxPrice) {
-        if (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) > 0) {
-            throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "minPrice cannot be greater than maxPrice"
-            );
-        }
     }
 
     private Specification<Listing> distinctResults() {
@@ -411,7 +402,7 @@ public class ListingQueryService {
                 "Listing cannot be modified in auction status " + auction.getStatus()
             );
         }
-        if (!isListingEditableStatus(effectiveListingStatus(listing, auction))) {
+        if (!lifecyclePolicy.canEdit(lifecyclePolicy.effectiveStatus(listing, auction))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Listing is not editable");
         }
         if (bidRepository.existsByListingId(listingId)) {
@@ -426,46 +417,16 @@ public class ListingQueryService {
 
     private boolean isPublicListing(Listing listing) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
-        return PUBLIC_LISTING_STATUSES.contains(effectiveListingStatus(listing, auction));
+        return PUBLIC_LISTING_STATUSES.contains(lifecyclePolicy.effectiveStatus(listing, auction));
     }
 
     private boolean matchesStatusFilter(Listing listing, ListingStatus requestedStatus) {
         Auction auction = findAuctionByListingId(listing.getId()).orElse(null);
-        ListingStatus effectiveStatus = effectiveListingStatus(listing, auction);
+        ListingStatus effectiveStatus = lifecyclePolicy.effectiveStatus(listing, auction);
         if (requestedStatus == null) {
             return true;
         }
         return effectiveStatus == requestedStatus;
-    }
-
-    private boolean isListingOpenForBid(ListingStatus status) {
-        return status == ListingStatus.ACTIVE || status == ListingStatus.EXTENDED;
-    }
-
-    private boolean isListingEditableStatus(ListingStatus status) {
-        return status == ListingStatus.DRAFT || status == ListingStatus.ACTIVE;
-    }
-
-    private ListingStatus effectiveListingStatus(Listing listing, Auction auction) {
-        if (listing.getStatus() == ListingStatus.CANCELLED) {
-            return ListingStatus.CANCELLED;
-        }
-        if (auction == null || auction.getStatus() == null) {
-            return listing.getStatus();
-        }
-        return toListingStatus(auction.getStatus());
-    }
-
-    private ListingStatus toListingStatus(AuctionStatus auctionStatus) {
-        return switch (auctionStatus) {
-            case DRAFT -> ListingStatus.DRAFT;
-            case ACTIVE -> ListingStatus.ACTIVE;
-            case EXTENDED -> ListingStatus.EXTENDED;
-            case CLOSED -> ListingStatus.CLOSED;
-            case WON -> ListingStatus.WON;
-            case UNSOLD -> ListingStatus.UNSOLD;
-            case CANCELLED -> ListingStatus.CANCELLED;
-        };
     }
 
     private ListingCategoryNodeResponse toCategoryNode(ListingCategory category) {
@@ -486,42 +447,4 @@ public class ListingQueryService {
         return seller;
     }
 
-    private ListingCategory resolveCategory(ListingCategory category) {
-        return category != null ? category : ListingCategory.OTHER;
-    }
-
-    private void validateCreateRequest(ListingCreateRequest request) {
-        if (request == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Listing request is required");
-        }
-        requireNonBlank(request.title(), "Title is required");
-        requireNonBlank(request.description(), "Description is required");
-        validatePositivePrice(request.price());
-    }
-
-    private void validateUpdateRequest(ListingUpdateRequest request) {
-        if (request == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Listing update request is required");
-        }
-        requireNonBlank(request.description(), "Description is required");
-    }
-
-    private void requireNonBlank(String value, String errorMessage) {
-        if (value == null || value.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, errorMessage);
-        }
-    }
-
-    private void validatePositivePrice(BigDecimal price) {
-        if (price == null || price.signum() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Price must be positive");
-        }
-    }
-
-    private String normalizeImageUrl(String imageUrl) {
-        if (imageUrl == null || imageUrl.isBlank()) {
-            return null;
-        }
-        return imageUrl.trim();
-    }
 }
