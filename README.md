@@ -1,21 +1,27 @@
 # BidMart Listing Query Service
 
-Service read-only untuk query listing di BidMart. Service ini diekstrak dari gateway/monolith lama sebagai read-side public catalog.
+Service listing/catalog read model untuk BidMart. Service ini melayani query listing, detail listing, kategori, validasi listing untuk bidding, serta command ringan milik listing boundary seperti create/update/cancel listing.
 
 ## Tanggung Jawab
 
-- Membaca listing catalog.
-- Membaca listing detail.
+- Membaca listing catalog dan filter status/category/keyword/price.
+- Membaca listing detail, termasuk status efektif auction dan harga terkini.
 - Membaca listing categories.
+- Memvalidasi apakah listing masih bisa menerima bid.
+- Membuat, mengubah, dan cancel listing milik seller sesuai boundary listing.
 - Mengekspos health check.
 
-Service ini bersifat read-only. Listing write command dan validasi transactional untuk bidding tidak menjadi tanggung jawab service ini.
+Sumber kebenaran bid tetap berada di bidding command service. Service ini hanya menyimpan/memaparkan read model listing dan status terkait auction.
 
 ## Endpoint
 
 ```txt
 GET /api/listings
+POST /api/listings
 GET /api/listings/{listingId}
+PUT /api/listings/{listingId}
+DELETE /api/listings/{listingId}
+GET /api/listings/{listingId}/validation
 GET /api/listings/categories
 GET /api/listings/categories/tree
 GET /actuator/health
@@ -27,6 +33,12 @@ Jalankan test:
 
 ```bash
 ./gradlew test
+```
+
+Jalankan quality gate dengan coverage:
+
+```bash
+./gradlew qualityGate
 ```
 
 Build jar:
@@ -61,19 +73,26 @@ SPRING_DATASOURCE_PASSWORD
 
 Dokumentasi boundary ada di `docs/service-boundary.md`.
 
+## Design dan Quality Notes
+
+Refactor TDD/SOLID terbaru terdokumentasi di:
+
+- `docs/tdd-report.md`
+- `docs/solid-review.md`
+- `docs/design-patterns.md`
+- `docs/before-after-design.md`
+
+Design pattern yang diterapkan:
+
+- State Pattern untuk lifecycle listing.
+- Strategy Pattern untuk filter listing.
+- Factory Pattern untuk creation/update listing.
+- Read model assembler dan mapper untuk response consistency.
+
 ## Status Migrasi
 
 Fase saat ini:
 
 ```txt
-gateway + auction-query-service + listing-query-service
-```
-
-Belum termasuk:
-
-```txt
-listing-command-service
-bidding-command-service
-wallet-service
-auth-service
+gateway + auth-service + listing-query-service + auction-query-service + bidding-command-service + wallet-service
 ```
